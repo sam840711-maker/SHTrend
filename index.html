@@ -217,7 +217,7 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.14 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.17 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -246,7 +246,7 @@
         <div><label>밴드 %</label><input id="cfgBand" inputmode="decimal"></div>
         <div><label>확인 일수</label><input id="cfgConfirm" inputmode="numeric"></div>
       </div>
-      <div class="note">밴드·확인일수는 휩소(속임수 신호)를 줄입니다. IBIT 권장: MA80 / 밴드 0% / 확인 1일. TQQQ 권장: MA200 / 밴드 1% / 확인 2일 / 비중 40%.</div>
+      <div class="note">밴드·확인일수는 휩소(속임수 신호)를 줄입니다. <b>BITX 권장: MA100 / 밴드 0% / 확인 1일</b> · IBIT: MA80 / 밴드 0% / 확인 1일 · TQQQ: MA200 / 밴드 1% / 확인 2일 / 비중 40%.</div>
       <div class="row" style="margin-top:6px"><button id="btnSaveCfg" style="width:100%">이 종목 설정 저장</button></div>
       <div class="row"><button id="btnDelSym" class="ghost" style="width:100%;color:var(--danger)">이 종목 삭제</button></div>
     </div>
@@ -370,6 +370,7 @@ function blank(){return{version:1,fx:1380,proxy:'',activeId:'ibit',chartRange:'6
   buffer:{balance:0,withdrawn:{},log:[]},
   autoBackup:true,lastBackup:null,lastBackupAt:0,lastTryAt:0,lastErrAt:0,
   symbols:[
+    defSym('bitx','BITX','BITX (2x BTC)',{maWindow:100,band:0,confirm:1,weight:100}),
     defSym('ibit','IBIT','IBIT (BTC 현물)',{maWindow:80,band:0,confirm:1,weight:100}),
     defSym('tqqq','TQQQ','TQQQ (3x 나스닥)',{maWindow:200,band:1,confirm:2,weight:40})
   ]};}
@@ -400,6 +401,34 @@ function normalize(s){
     s._ledgerMigrated=true;
   }
   if(!s.chartRange)s.chartRange='6M';
+  // BITX 1회 시드(삭제하면 재생성 안 함)
+  if(!s._bitxSeeded){
+    if(!s.symbols.some(x=>(x.symbol||'').toUpperCase()==='BITX')){
+      const bx={id:'bitx',symbol:'BITX',name:'BITX (2x BTC)',
+        cfg:{maWindow:100,band:0,confirm:1,weight:100},
+        price:null,priceHistory:[],pos:null,trades:[],dca:[]};
+      s.symbols.unshift(bx); s.activeId='bitx';
+    }
+    s._bitxSeeded=true;
+  }
+  // 실계좌 개시 상태 1회 반영 (2026-09-14 BITX 837주 · MST3 정리 손실)
+  if(!s._openingSeeded){
+    const bx=s.symbols.find(x=>(x.symbol||'').toUpperCase()==='BITX');
+    if(bx&&!bx.pos&&!(bx.trades||[]).length){
+      const SH=837, PX=17.22, FX=1342.85, KRW=19354685, LOSS=13075280;
+      bx.pos={date:'2026-09-14',price:PX,shares:SH,krw:KRW,fx:FX};
+      bx.trades=[{type:'BUY',date:'2026-09-14',price:PX,shares:SH,krw:KRW,fx:FX}];
+      bx.price=17.3295;
+      s.fx=FX;
+      s.cashKRW=0;
+      // 투입 원금 = 매수금액(정리자금에서 충당)
+      s.ledger=[{type:'IN',date:'2026-09-14',amount:KRW,memo:'MST3 정리자금',dca:false}];
+      // MST3 실현손실 → 양도세 통산용
+      s.tax=Object.assign({},s.tax,{carryLoss:LOSS});
+      s.activeId=bx.id;   // 보유 종목을 활성 탭으로
+    }
+    s._openingSeeded=true;
+  }
   if(typeof s.fx!=='number')s.fx=1380;
   if(typeof s.autoBackup==='undefined')s.autoBackup=true;
   if(!s.activeId||!s.symbols.some(x=>x.id===s.activeId))s.activeId=s.symbols[0].id;
@@ -663,6 +692,14 @@ function render(){
   else if(act==='BUY')
     note=`<div class="note">매수 신호입니다. 보유 현금 ${won(S.cashKRW||0)} 중 <b>${cfg.weight}%</b>`+
       (gate.amount?` ≈ ${won(gate.amount)}`:'')+`를 ${inst.symbol}에 배정하세요.<br>실행 후 "매수 기록"을 눌러 주세요.</div>`;
+  // 레버리지 상품 위험 고지
+  if(/^(BITX|BITU|BTCL|BTCU|TQQQ|SOXL|TNA|MSTU)$/i.test(inst.symbol)&&(inPos||act==='BUY')){
+    const lev=/^(TQQQ|SOXL|TNA)$/i.test(inst.symbol)?'3배':'2배';
+    note+=`<div class="note" style="background:rgba(229,83,75,.08);border-color:rgba(229,83,75,.3);color:#e08c86">`+
+      `⚠ <b>${lev} 레버리지</b> — 일간 리셋 구조로 <b>변동성 감쇠</b>가 누적됩니다.`+
+      (/^BITX$/i.test(inst.symbol)?` 선물 기반이라 <b>실질 보유비용 연 10% 내외</b>(보수 2.38% + 자금조달 + 롤)이며, 롤오버로 <b>과세 이벤트</b>가 발생할 수 있습니다.`:'')+
+      `<br><span class="faint">백테스트 최대낙폭 −67%. 규칙(${cfg.maWindow}일선 이탈 시 전량 매도)을 반드시 지키세요.</span></div>`;
+  }
   else if(act==='SELL')note=`<div class="note">매도 신호입니다. <b>전량 매도</b> 후 "매도 기록"을 눌러 주세요.</div>`;
   $('sigNote').innerHTML=note;
   drawChart(inst,sig);
