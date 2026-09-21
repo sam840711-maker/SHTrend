@@ -139,7 +139,10 @@
       <button class="primary" id="btnIn">매수 기록</button>
       <button class="gold" id="btnOut">매도 기록</button>
     </div>
-    <button class="ghost" id="btnCash" style="width:100%;margin-top:8px;font-size:13px">현금 직접 조정</button>
+    <div class="grid2" style="margin-top:8px">
+      <button class="ghost" id="btnCash" style="font-size:13px">현금 직접 조정</button>
+      <button class="ghost" id="btnImport" style="font-size:13px">📋 캡처 JSON 반영</button>
+    </div>
   </div>
 
   <!-- 시세 -->
@@ -217,11 +220,30 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.17 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.19 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
 <!-- 기록 화면 -->
+<div class="sheet" id="importView">
+  <div class="sheet-head"><span>📋 캡처 JSON 반영</span>
+    <button class="ghost" id="btnImpClose">닫기</button></div>
+  <div class="sheet-body">
+    <div class="card">
+      <div class="mini" style="line-height:1.6;margin-bottom:8px">
+        증권사 캡처를 Claude에게 올리고 받은 JSON을 붙여넣으세요.<br>
+        <b>부분 반영</b>입니다 — JSON에 적힌 종목·항목만 바뀌고 나머지는 그대로입니다.</div>
+      <textarea id="impText" rows="9" style="width:100%;background:var(--bg);border:1px solid var(--line);border-radius:9px;
+        color:var(--ink);padding:10px;font-size:12px;font-family:var(--mono)" placeholder='{"positions":[...],"cashKRW":0}'></textarea>
+      <div class="grid2" style="margin-top:9px">
+        <button id="btnImpPreview">미리보기</button>
+        <button class="primary" id="btnImpApply" disabled>적용</button>
+      </div>
+      <div id="impPreview" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
 <div class="sheet" id="logView">
   <div class="sheet-head"><span>매매 기록 · <span id="logSym" style="font-family:var(--mono)">—</span></span>
     <button class="ghost" id="btnLogClose">← 뒤로</button></div>
@@ -270,17 +292,18 @@
     </div>
 
     <div class="card">
-      <h3>세금 설정</h3>
+      <h3>세금 · 수수료 설정</h3>
       <div class="grid2">
         <div><label>세율 %</label><input id="cfgTaxRate" inputmode="decimal"></div>
         <div><label>기본공제 (원)</label><input id="cfgTaxDed" inputmode="numeric"></div>
       </div>
+      <div style="margin-top:9px"><label>매매 수수료 % (편도)</label><input id="cfgFee" inputmode="decimal" placeholder="0.25"></div>
       <div style="margin-top:9px"><label>차감할 기존 손실 (원)</label><input id="cfgCarry" inputmode="numeric" placeholder="예: MST3 정리 손실"></div>
       <div class="row" style="margin-top:9px">
         <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--ink)">
           <input type="checkbox" id="chkReserve" style="width:auto"> 총자산에서 예상 세액 차감</label>
       </div>
-      <div class="note">해외주식 양도세는 <b>연간 실현손익 합산 → 250만 공제 → 22%</b>이며 다음 해 5월에 신고합니다. 같은 해 실현 손실은 이익과 통산되니, <b>MST3 정리 손실을 여기 입력</b>하면 예상 세액에 반영됩니다. 실제 신고는 세무사 확인 필요.</div>
+      <div class="note">해외주식 양도세는 <b>연간 실현손익 합산 → 250만 공제 → 22%</b>이며 다음 해 5월에 신고합니다. 같은 해 실현 손실은 이익과 통산되니, <b>MST3 정리 손실을 여기 입력</b>하면 예상 세액에 반영됩니다. 실제 신고는 세무사 확인 필요.<br><b>매도 기록</b> 시 체결가·환율·수량 다음에 <b>실수령액(USD, 수수료 차감)</b>과 <b>증권사 실현손익(원)</b>을 입력하면 세금이 증권사 기준으로 집계됩니다. 수수료율은 BEP 표시와 실수령액 기본값에 쓰입니다.</div>
       <div class="row" style="margin-top:6px"><button id="btnSaveTax" style="width:100%">세금 설정 저장</button></div>
     </div>
 
@@ -307,6 +330,7 @@
 
     <div class="card">
       <h3>데이터</h3>
+      <div class="note" style="margin:0 0 9px">증권사 잔고·체결·예수금 캡처를 Claude에게 올리면 반영용 JSON을 만들어 줍니다. 포지션 카드 → <b>📋 캡처 JSON 반영</b>에 붙여넣고 미리보기 확인 후 적용하세요. 적힌 종목·항목만 바뀌고(부분 반영), 이미 기록된 거래·입출금은 중복으로 들어가지 않습니다.</div>
       <div class="grid2">
         <button id="btnExport">파일 내보내기</button>
         <button id="btnReset" class="ghost" style="color:var(--danger)">전체 초기화</button>
@@ -392,6 +416,7 @@ function normalize(s){
   if(!Array.isArray(s.buffer.log))s.buffer.log=[];
   if(typeof s.phase==='undefined')s.phase=1;
   if(typeof s.cashKRW!=='number')s.cashKRW=0;
+  if(typeof s.feeRate!=='number')s.feeRate=0.25;
   s.tax=Object.assign({rate:22,deduct:2500000,carryLoss:0,reserve:true},s.tax||{});
   if(!Array.isArray(s.ledger))s.ledger=[];
   // 구버전 적립기록(dca) → 원장으로 1회 이관
@@ -428,6 +453,22 @@ function normalize(s){
       s.activeId=bx.id;   // 보유 종목을 활성 탭으로
     }
     s._openingSeeded=true;
+  }
+  // 2026-09-21 미수금 정산용 BITX 3주 부분매도 1회 반영 (키움 체결·예수금상세 기준)
+  if(!s._sale0921){
+    const bx=s.symbols.find(x=>(x.symbol||'').toUpperCase()==='BITX');
+    if(bx&&bx.pos&&Math.abs(bx.pos.shares-837)<1e-6){
+      const SH=3, PX=18.87, NET=56.46, VAL=77079, PNL=6484;
+      const costPart=bx.pos.krw*(SH/bx.pos.shares);
+      bx.trades.push({type:'SELL',date:'2026-09-21',price:PX,shares:SH,netUsd:NET,
+        krw:VAL,fx:+(VAL/NET).toFixed(2),entry:bx.pos.price,entryDate:bx.pos.date,
+        pnl:PNL,partial:true,memo:'미수금 정산'});
+      bx.pos.shares=bx.pos.shares-SH;
+      bx.pos.krw=bx.pos.krw-costPart;
+      bx.price=18.83; s.fx=1386;
+      s.cashKRW=(s.cashKRW||0)+VAL;   // D+2(9/23) 결제 예정분
+    }
+    s._sale0921=true;
   }
   if(typeof s.fx!=='number')s.fx=1380;
   if(typeof s.autoBackup==='undefined')s.autoBackup=true;
@@ -712,7 +753,9 @@ function render(){
     const val=posValueKRW(inst);
     $('posState').innerHTML='<span class="st in">보유</span> '+inst.pos.date;
     $('posValue').textContent=won(val);
-    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} · ${inst.pos.shares.toFixed(2)}주`;
+    const f=(S.feeRate!=null?S.feeRate:0.25)/100;
+    const bep=inst.pos.price*(1+f)/(1-f);
+    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} · ${inst.pos.shares.toFixed(2)}주 · BEP $${bep.toFixed(2)}`;
     $('posPnl').innerHTML=`<span style="color:${pnlPct>=0?'var(--buy)':'var(--danger)'}">`+
       `${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}% (${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(0)})</span>`;
   }else{
@@ -935,13 +978,22 @@ $('btnOut').onclick=()=>{
   let sh=parseFloat(String(shIn).replace(/[^0-9.]/g,''))||held;
   if(sh>held)sh=held;
   const partial=sh<held-1e-9;
-  const val=sh*px*fx;
-  const costPart=inst.pos.krw*(sh/held);     // 매도분에 해당하는 원가
-  const pnl=val-costPart;
+  const fee=(S.feeRate!=null?S.feeRate:0.25)/100;
+  const netIn=prompt(`실수령액 (USD, 수수료 차감 후)\n\n체결내역·예수금상세의 결제 예정 금액\n기본값 = ${sh}주 × $${px.toFixed(2)} − 수수료 ${(fee*100).toFixed(2)}%`,
+    (sh*px*(1-fee)).toFixed(2));
+  if(netIn===null)return;
+  const netUsd=parseFloat(String(netIn).replace(/[^0-9.]/g,''))||sh*px*(1-fee);
+  const val=netUsd*fx;                         // 원화 환산 수령액
+  const costPart=inst.pos.krw*(sh/held);       // 매도분에 해당하는 원가
+  const calcPnl=val-costPart;
+  const pIn=prompt(`실현손익 (원)\n\n증권사 표시값을 입력하세요 (세금 계산 기준).\n비우면 앱 계산값 ${calcPnl>=0?'+':''}${won(calcPnl)} 사용`,'');
+  if(pIn===null)return;
+  const pStr=String(pIn).trim();
+  const pnl=pStr===''?calcPnl:(pStr.startsWith('-')?-1:1)*(parseFloat(pStr.replace(/[^0-9.]/g,''))||0);
   if(!confirm(`${partial?`${sh}주 부분 매도`:'전량 매도'}하시겠습니까?\n\n`+
     `$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} (${((px/inst.pos.price-1)*100).toFixed(1)}%)\n`+
-    `수령액 ${won(val)}\n손익 ${pnl>=0?'+':''}${won(pnl)}`))return;
-  inst.trades.push({type:'SELL',date:today(),price:px,shares:sh,
+    `실수령 $${netUsd.toFixed(2)} ≈ ${won(val)}\n실현손익 ${pnl>=0?'+':''}${won(pnl)}`))return;
+  inst.trades.push({type:'SELL',date:today(),price:px,shares:sh,netUsd,
     krw:val,fx,entry:inst.pos.price,entryDate:inst.pos.date,pnl,partial});
   if(partial){
     inst.pos.shares=held-sh;
@@ -1111,6 +1163,7 @@ function openSettings(){
   const tx=S.tax||{};
   $('cfgTaxRate').value=tx.rate;$('cfgTaxDed').value=tx.deduct;
   $('cfgCarry').value=tx.carryLoss||0;$('chkReserve').checked=!!tx.reserve;
+  $('cfgFee').value=S.feeRate!=null?S.feeRate:0.25;
   $('cfgProxy').value=S.proxy||'';
   $('setView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}
 }
@@ -1133,6 +1186,7 @@ function collectSettings(){   // 설정 화면의 입력값을 모두 상태에 
     S.tax.deduct=num('cfgTaxDed');
     S.tax.carryLoss=num('cfgCarry');
     S.tax.reserve=$('chkReserve').checked;
+    if(parseFloat($('cfgFee').value)>=0)S.feeRate=parseFloat($('cfgFee').value);
     S.proxy=($('cfgProxy').value||'').trim();
     save();
   }catch(e){}
@@ -1143,6 +1197,7 @@ $('btnSetClose').onclick=()=>{closeSettings();
   if(history.state&&history.state.s){try{history.back();}catch(e){}}};
 window.addEventListener('popstate',()=>{
   if($('chartFull').classList.contains('show')){closeChartFull();return;}
+  if($('importView').classList.contains('show')){$('importView').classList.remove('show');return;}
   if($('setView').classList.contains('show'))closeSettings();
   $('logView').classList.remove('show');});
 
@@ -1173,7 +1228,8 @@ $('btnSaveTax').onclick=()=>{
   S.tax.deduct=num('cfgTaxDed');
   S.tax.carryLoss=num('cfgCarry');
   S.tax.reserve=$('chkReserve').checked;
-  save();render();toast('세금 설정 저장');backupSoon();
+  S.feeRate=parseFloat($('cfgFee').value)>=0?parseFloat($('cfgFee').value):0.25;
+  save();render();toast('세금·수수료 설정 저장');backupSoon();
 };
 $('btnSaveProxy').onclick=()=>{
   S.proxy=($('cfgProxy').value||'').trim();
@@ -1205,6 +1261,145 @@ $('btnReset').onclick=()=>{
   $('setView').classList.remove('show');toast('초기화 완료');
 };
 
+/* ===== 캡처 JSON 부분 반영 =====
+  형식(모든 키 선택):
+  { "asOf":"YYYY-MM-DD", "fx":1386,
+    "positions":[{"symbol":"BITX","qty":834,"avgUSD":17.22,"buyKRW":19285313,"price":18.83,"date":"2026-09-14"}],
+    "cashKRW":77079,
+    "trades":[{"type":"SELL","symbol":"BITX","date":"2026-09-21","qty":3,"price":18.87,"netUSD":56.46,"fx":1365.2,"pnlKRW":6484,"memo":""}],
+    "ledger":[{"type":"IN","date":"2026-09-21","amount":500000,"dca":true,"memo":"월 적립"}],
+    "tax":{"carryLoss":13075280} }
+  규칙: positions·cashKRW·fx는 스냅샷(덮어씀). trades는 이력·세금용 기록(보유·현금은 건드리지 않음).
+        ledger는 원장 추가(cashKRW가 없을 때만 현금에 가감). 이미 있는 거래·원장은 건너뜀. */
+let _impPlan=null;
+function _num(v){const n=typeof v==='number'?v:parseFloat(String(v).replace(/[^0-9.\-]/g,''));return isFinite(n)?n:null;}
+function _symOf(sym){return S.symbols.find(x=>(x.symbol||'').toUpperCase()===String(sym||'').toUpperCase());}
+function _tradeKey(t){return [t.type,t.date,Number(t.shares||t.qty||0).toFixed(4),Number(t.price||0).toFixed(4)].join('|');}
+function _ledgerKey(l){return [l.type,l.date,Math.round(l.amount||0),(l.memo||'')].join('|');}
+function buildImportPlan(j){
+  const plan={pos:[],cash:null,fx:null,trades:[],ledger:[],tax:null,warn:[],skip:0};
+  if(!j||typeof j!=='object'||Array.isArray(j))throw new Error('JSON 객체가 아닙니다');
+  const date=j.asOf||today();
+  if(j.fx!=null){const f=_num(j.fx);if(f>0)plan.fx=f;else plan.warn.push('fx 값이 잘못됨 — 무시');}
+  (j.positions||[]).forEach(p=>{
+    const sym=String(p.symbol||'').toUpperCase();if(!sym){plan.warn.push('symbol 없는 포지션 — 무시');return;}
+    const qty=_num(p.qty);if(qty==null||qty<0){plan.warn.push(`${sym}: qty 누락 — 무시`);return;}
+    const inst=_symOf(sym);const old=inst&&inst.pos;
+    const avg=_num(p.avgUSD)??(old?old.price:null);
+    const fxp=plan.fx||S.fx;
+    let krw=_num(p.buyKRW);
+    if(krw==null&&qty>0){
+      if(old&&old.shares>0)krw=old.krw*(qty/old.shares);          // 수량 비례
+      else if(avg)krw=qty*avg*fxp;
+    }
+    if(qty>0&&!(avg>0)){plan.warn.push(`${sym}: avgUSD 필요 — 무시`);return;}
+    if(old&&avg&&Math.abs(avg-old.price)>0.005)plan.warn.push(`${sym}: 평단 $${old.price.toFixed(2)} → $${avg.toFixed(2)} 변경 (추가매수가 아니면 확인)`);
+    if(!inst)plan.warn.push(`${sym}: 앱에 없는 종목 — 새로 추가됩니다(MA80 기본)`);
+    plan.pos.push({sym,inst,qty,avg,krw,price:_num(p.price),date:p.date||(old&&old.date)||date,
+      oldQty:old?old.shares:0,oldAvg:old?old.price:null,oldKrw:old?old.krw:0});
+  });
+  if(j.cashKRW!=null){const c=_num(j.cashKRW);if(c!=null&&c>=0)plan.cash=c;else plan.warn.push('cashKRW 값이 잘못됨 — 무시');}
+  (j.trades||[]).forEach(t=>{
+    const sym=String(t.symbol||'').toUpperCase();const type=String(t.type||'').toUpperCase();
+    if(!sym||!/^(BUY|SELL)$/.test(type)){plan.warn.push('거래: symbol/type(BUY|SELL) 확인 — 무시');return;}
+    const qty=_num(t.qty),px=_num(t.price);
+    if(!(qty>0&&px>0)){plan.warn.push(`거래 ${sym}: qty/price 누락 — 무시`);return;}
+    const fx=_num(t.fx)||plan.fx||S.fx;
+    const netUsd=_num(t.netUSD);
+    const rec={type,date:t.date||date,price:px,shares:qty,fx,memo:t.memo||''};
+    if(type==='SELL'){
+      rec.netUsd=netUsd??qty*px*(1-(S.feeRate??0.25)/100);
+      rec.krw=_num(t.krw)??rec.netUsd*fx;
+      rec.pnl=_num(t.pnlKRW)??0; rec.partial=true;
+      if(t.pnlKRW==null)plan.warn.push(`거래 ${sym} ${rec.date}: pnlKRW 없음 — 실현손익 0으로 기록`);
+    }else rec.krw=_num(t.krw)??qty*px*fx;
+    const inst=_symOf(sym);
+    const dup=inst&&(inst.trades||[]).some(x=>_tradeKey(x)===_tradeKey(rec));
+    if(dup){plan.skip++;return;}
+    plan.trades.push({sym,rec});
+  });
+  (j.ledger||[]).forEach(l=>{
+    const type=String(l.type||'').toUpperCase();const amt=_num(l.amount);
+    if(!/^(IN|OUT)$/.test(type)||!(amt>0)){plan.warn.push('원장: type(IN|OUT)/amount 확인 — 무시');return;}
+    const rec={type,date:l.date||date,amount:amt,memo:l.memo||'',dca:!!l.dca};
+    if((S.ledger||[]).some(x=>_ledgerKey(x)===_ledgerKey(rec))){plan.skip++;return;}
+    plan.ledger.push(rec);
+  });
+  if(j.tax&&j.tax.carryLoss!=null){const v=_num(j.tax.carryLoss);if(v!=null&&v>=0)plan.tax={carryLoss:v};}
+  return plan;
+}
+function previewHTML(plan){
+  const row=(k,a,b,chg)=>`<div class="row"><span class="k">${k}</span><span style="font-family:var(--mono);font-size:12px;${chg?'color:var(--buy)':'color:var(--faint)'}">${a} → ${b}</span></div>`;
+  let h='';
+  if(plan.pos.length){h+='<h3 style="margin-top:4px">종목</h3>';
+    plan.pos.forEach(p=>{
+      const chg=Math.abs(p.qty-p.oldQty)>1e-9||(p.oldKrw&&Math.abs((p.krw||0)-p.oldKrw)>1);
+      h+=row(`${p.sym} 수량`,`${p.oldQty}주`,`${p.qty}주`,Math.abs(p.qty-p.oldQty)>1e-9);
+      if(p.qty>0)h+=row(`${p.sym} 원가`,won(p.oldKrw),won(p.krw),Math.abs((p.krw||0)-p.oldKrw)>1);
+      if(p.price)h+=row(`${p.sym} 현재가`,p.inst&&p.inst.price!=null?'$'+p.inst.price.toFixed(2):'—','$'+p.price.toFixed(2),true);
+      if(!chg&&!p.price)h+=`<div class="mini">${p.sym}: 변경 없음</div>`;
+    });}
+  if(plan.fx)h+=row('환율','₩'+Number(S.fx).toFixed(2),'₩'+plan.fx.toFixed(2),Math.abs(plan.fx-S.fx)>0.001);
+  if(plan.cash!=null)h+=row('투자 대기 현금',won(S.cashKRW||0),won(plan.cash),Math.abs(plan.cash-(S.cashKRW||0))>0.5);
+  if(plan.tax)h+=row('이월 손실',won(S.tax.carryLoss||0),won(plan.tax.carryLoss),plan.tax.carryLoss!==(S.tax.carryLoss||0));
+  if(plan.trades.length){h+='<h3 style="margin-top:10px">거래 기록 추가</h3>';
+    plan.trades.forEach(t=>{const r=t.rec;
+      h+=`<div class="mini" style="padding:3px 0">${r.date} · ${t.sym} ${r.type==='SELL'?'매도':'매수'} ${r.shares}주 @ $${r.price.toFixed(2)}`+
+        (r.type==='SELL'?` · 실수령 $${r.netUsd.toFixed(2)} · 실현 ${r.pnl>=0?'+':''}${won(r.pnl)}`:` · ${won(r.krw)}`)+`</div>`;});}
+  if(plan.ledger.length){h+='<h3 style="margin-top:10px">입출금 추가</h3>';
+    plan.ledger.forEach(l=>{h+=`<div class="mini" style="padding:3px 0">${l.date} · ${l.type==='IN'?(l.dca?'적립':'입금'):'출금'} ${won(l.amount)}${l.memo?' · '+l.memo:''}</div>`;});
+    if(plan.cash==null)h+=`<div class="mini" style="color:var(--faint)">cashKRW가 없어 입출금액만큼 현금이 가감됩니다.</div>`;}
+  if(plan.skip)h+=`<div class="mini" style="margin-top:8px;color:var(--faint)">이미 기록된 항목 ${plan.skip}건은 건너뜁니다.</div>`;
+  if(plan.warn.length)h+=`<div class="note" style="margin-top:10px">${plan.warn.map(w=>'⚠ '+w).join('<br>')}</div>`;
+  if(!h)h='<div class="mini">반영할 내용이 없습니다.</div>';
+  return h;
+}
+function applyImportPlan(plan){
+  if(plan.fx)S.fx=plan.fx;
+  plan.pos.forEach(p=>{
+    let inst=p.inst;
+    if(!inst){const id=p.sym.toLowerCase().replace(/[^a-z0-9]/g,'')||('s'+Date.now());
+      inst={id,symbol:p.sym,name:p.sym,cfg:Object.assign({},Engine.DEFAULT_CFG),price:null,priceHistory:[],pos:null,trades:[],dca:[]};
+      S.symbols.push(inst);}
+    if(p.qty>0)inst.pos={date:p.date,price:p.avg,shares:p.qty,krw:p.krw,fx:(inst.pos&&inst.pos.fx)||S.fx};
+    else inst.pos=null;
+    if(p.price){inst.price=p.price;const h=inst.priceHistory,t=today();
+      if(h.length&&h[h.length-1].date===t)h[h.length-1].close=p.price;}
+  });
+  plan.trades.forEach(t=>{const inst=_symOf(t.sym);if(!inst)return;
+    t.rec.entry=inst.pos?inst.pos.price:t.rec.price;t.rec.entryDate=inst.pos?inst.pos.date:'';
+    inst.trades.push(t.rec);});
+  plan.ledger.forEach(l=>{S.ledger.push(l);
+    if(plan.cash==null)S.cashKRW=Math.max(0,(S.cashKRW||0)+(l.type==='IN'?l.amount:-l.amount));});
+  if(plan.cash!=null)S.cashKRW=plan.cash;
+  if(plan.tax)S.tax.carryLoss=plan.tax.carryLoss;
+  const act=plan.pos.find(p=>p.qty>0);if(act){const i=_symOf(act.sym);if(i)S.activeId=i.id;}
+  save();render();backupSoon();
+}
+$('btnImport').onclick=()=>{_impPlan=null;$('btnImpApply').disabled=true;$('impPreview').innerHTML='';
+  $('importView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}};
+$('btnImpClose').onclick=()=>{$('importView').classList.remove('show');
+  if(history.state&&history.state.s){try{history.back();}catch(e){}}};
+$('impText').addEventListener('input',()=>{_impPlan=null;$('btnImpApply').disabled=true;});
+$('btnImpPreview').onclick=()=>{
+  let raw=$('impText').value.trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
+  try{const j=JSON.parse(raw);_impPlan=buildImportPlan(j);
+    $('impPreview').innerHTML=previewHTML(_impPlan);
+    const any=_impPlan.pos.length||_impPlan.fx||_impPlan.cash!=null||_impPlan.trades.length||_impPlan.ledger.length||_impPlan.tax;
+    $('btnImpApply').disabled=!any;
+  }catch(e){_impPlan=null;$('btnImpApply').disabled=true;
+    $('impPreview').innerHTML=`<div class="note">JSON 형식 오류: ${String(e.message||e).replace(/</g,'&lt;')}</div>`;}
+};
+$('btnImpApply').onclick=()=>{
+  if(!_impPlan)return;
+  if(!confirm('미리보기 내용으로 반영할까요?'))return;
+  applyImportPlan(_impPlan);_impPlan=null;
+  $('impText').value='';$('impPreview').innerHTML='';$('btnImpApply').disabled=true;
+  $('importView').classList.remove('show');
+  if(history.state&&history.state.s){try{history.back();}catch(e){}}
+  toast('캡처 반영 완료');
+};
+
 /* ===== 당겨서 새로고침 (PTR) → 시세 갱신 ===== */
 (function(){
   let startY=null,startX=null,dist=0,active=false;
@@ -1213,7 +1408,7 @@ $('btnReset').onclick=()=>{
     ptr.style.opacity='0';ptr.style.transform='translate(-50%,-44px)';
     ptr.classList.remove('spin');ptr.textContent='↓ 당겨서 새로고침';}
   window.addEventListener('touchstart',e=>{
-    if($('setView').classList.contains('show')||$('logView').classList.contains('show')||$('chartFull').classList.contains('show')){startY=null;return;}
+    if($('setView').classList.contains('show')||$('logView').classList.contains('show')||$('importView').classList.contains('show')||$('chartFull').classList.contains('show')){startY=null;return;}
     if(window.scrollY<=0&&e.touches.length===1){startY=e.touches[0].clientY;startX=e.touches[0].clientX;dist=0;active=false;}
     else startY=null;
   },{passive:true});
@@ -1245,7 +1440,7 @@ $('btnReset').onclick=()=>{
   let sx=null,sy=null,locked=null,fired=false,_swipedAt=0;
   const H_MIN=55,V_TOL=1.6;
   function blocked(t){
-    if($('setView').classList.contains('show')||$('logView').classList.contains('show'))return true;
+    if($('setView').classList.contains('show')||$('logView').classList.contains('show')||$('importView').classList.contains('show'))return true;
     if($('chartFull').classList.contains('show'))return true;
     // 가로 스크롤 영역과 입력 요소만 제외 (일반 버튼 위에서도 스와이프 허용)
     return !!(t&&t.closest&&t.closest('#tabs,#ranges,#chartFull,input,select,textarea'));
