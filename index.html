@@ -220,7 +220,7 @@
 
   <button class="ghost" style="width:100%;margin-top:4px" id="btnSettings">⚙ 설정 · 백업</button>
   <div class="mini" style="text-align:center;margin-top:14px;line-height:1.6">
-    v1.19 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
+    v1.20 · sibling of SH Portfolio<br>투자 조언 아님 · 본인 판단·세무사 확인 하에 운용
   </div>
 </div>
 
@@ -308,11 +308,16 @@
     </div>
 
     <div class="card">
-      <h3>시세 프록시</h3>
+      <h3>시세</h3>
+      <div class="row" style="margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--ink)">
+          <input type="checkbox" id="chkExt" style="width:auto"> 평가·손익에 프리·애프터 시세 반영</label>
+      </div>
+      <div class="mini" style="margin-bottom:10px">장외 시간엔 1분봉 마지막 체결가를 가져와 평가금액·손익·총자산에 씁니다. <b>매수·매도 신호는 항상 정규장 종가 기준</b>입니다(백테스트 기준·장외 호가는 얇아 가짜 신호 위험). 끄면 정규장 가격으로만 평가합니다.</div>
       <label>커스텀 프록시 (선택)</label>
       <input id="cfgProxy" placeholder="sh-proxy.xxx.workers.dev">
       <div class="mini" style="margin-top:6px">기본은 공개 프록시로 조회합니다. 워커 주소 입력 시 우선 사용(스킴·슬래시 자동 보정).</div>
-      <div class="row" style="margin-top:8px"><button id="btnSaveProxy" style="width:100%">프록시 저장</button></div>
+      <div class="row" style="margin-top:8px"><button id="btnSaveProxy" style="width:100%">시세 설정 저장</button></div>
     </div>
 
     <div class="card">
@@ -417,6 +422,7 @@ function normalize(s){
   if(typeof s.phase==='undefined')s.phase=1;
   if(typeof s.cashKRW!=='number')s.cashKRW=0;
   if(typeof s.feeRate!=='number')s.feeRate=0.25;
+  if(typeof s.useExt!=='boolean')s.useExt=true;
   s.tax=Object.assign({rate:22,deduct:2500000,carryLoss:0,reserve:true},s.tax||{});
   if(!Array.isArray(s.ledger))s.ledger=[];
   // 구버전 적립기록(dca) → 원장으로 1회 이관
@@ -534,13 +540,43 @@ async function fetchPrice(){
     const mt=r.meta&&r.meta.regularMarketTime;
     const pxDate=mt?new Date(mt*1000).toISOString().slice(0,10):hist[hist.length-1].date;
     if(hist[hist.length-1].date===pxDate)hist[hist.length-1].close=px; else hist.push({date:pxDate,close:px});
-    inst.priceHistory=hist.slice(-800);inst.price=px;
+    inst.priceHistory=hist.slice(-800);inst.price=px;inst.regTime=mt||null;
+    await fetchExt(inst);
     save();render();$('dotPx').className='dot ok';$('pxDiag').textContent='';
-    toast(inst.symbol+' · '+hist.length+'일');fetchFx();
+    toast(inst.symbol+' · '+hist.length+'일'+(extFresh(inst)?` · ${SESS[inst.ext.session]} $${inst.ext.price.toFixed(2)}`:''));fetchFx();
   }catch(e){$('dotPx').className='dot err';
     $('pxDiag').textContent='⚠ 시세 실패 → '+(_diag.length?_diag.join(' · '):(e&&e.message||'실패'));
     toast('시세 실패 · 수동 입력하세요');}
 }
+/* 프리·애프터 시세: 1분봉(includePrePost)의 마지막 체결가 → 세션 판정 */
+const SESS={PRE:'프리마켓',POST:'애프터마켓'};
+async function fetchExt(inst){
+  try{
+    const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(inst.symbol)}?interval=1m&range=1d&includePrePost=true&t=${Date.now()}`;
+    const j=await proxyJson(url);
+    const r=j&&j.chart&&j.chart.result&&j.chart.result[0];
+    const ts=(r&&r.timestamp)||[];
+    const cl=(r&&r.indicators&&r.indicators.quote&&r.indicators.quote[0]&&r.indicators.quote[0].close)||[];
+    let k=cl.length-1;while(k>=0&&cl[k]==null)k--;
+    if(k<0){inst.ext=null;return;}
+    const t=ts[k],px=cl[k],tp=(r.meta&&r.meta.currentTradingPeriod)||{};
+    const inP=(x)=>x&&t>=x.start&&t<x.end;
+    let sess=null;
+    if(inP(tp.pre))sess='PRE';
+    else if(inP(tp.post)||(tp.regular&&t>=tp.regular.end))sess='POST';
+    if(!sess||(inst.regTime&&t<=inst.regTime)){inst.ext=null;return;}   // 정규장 중·정규장 이전 데이터면 사용 안 함
+    inst.ext={price:px,session:sess,ts:t};
+  }catch(e){ /* 장외 시세 실패는 무시(정규 시세는 유지) */ }
+}
+function extFresh(inst){
+  return !!(inst&&inst.ext&&inst.ext.price>0&&(Date.now()/1000-inst.ext.ts)<20*3600
+    &&(!inst.regTime||inst.ext.ts>inst.regTime));
+}
+function markPrice(inst){   // 평가용 가격: 장외 시세 사용 설정 시 최신 장외가, 아니면 정규장 가격
+  if(S.useExt!==false&&extFresh(inst))return inst.ext.price;
+  return inst.price!=null?inst.price:(inst.pos?inst.pos.price:null);
+}
+function kst(ts){return new Date(ts*1000).toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false});}
 async function fetchFx(){
   try{const j=await proxyJson('https://query1.finance.yahoo.com/v8/finance/chart/KRW=X?interval=1d&range=5d&t='+Date.now());
     const v=j&&j.chart&&j.chart.result&&j.chart.result[0]&&j.chart.result[0].meta&&j.chart.result[0].meta.regularMarketPrice;
@@ -626,7 +662,7 @@ window.addEventListener('pagehide',flushBackup);
 /* ================= 계산 ================= */
 function posValueKRW(inst){
   if(!inst.pos)return 0;
-  const px=inst.price||inst.pos.price;
+  const px=markPrice(inst)||inst.pos.price;
   return inst.pos.shares*px*S.fx;
 }
 function totalAssets(){
@@ -723,7 +759,11 @@ function render(){
     $('sigStat').innerHTML=
       `현재가 <b>$${inst.price.toFixed(2)}</b> · ${cfg.maWindow}일선 <b>$${sig.ma.toFixed(2)}</b> `+
       `<b style="color:${up?'var(--buy)':'var(--danger)'}">${up?'+':''}${sig.pct.toFixed(1)}%</b>`+
-      `<br><span class="faint">${sig.side==='up'?'▲ 위':'▼ 아래'} ${sig.streak}일 연속 · 확인 기준 ${cfg.confirm}일 · 비중 ${cfg.weight}%</span>`;
+      `<br><span class="faint">${sig.side==='up'?'▲ 위':'▼ 아래'} ${sig.streak}일 연속 · 확인 기준 ${cfg.confirm}일 · 비중 ${cfg.weight}%</span>`+
+      (extFresh(inst)?(()=>{const e=inst.ext,d=(e.price/inst.price-1)*100,vsMa=(e.price/sig.ma-1)*100;
+        return `<br><span style="color:var(--sell)">◐ ${SESS[e.session]} $${e.price.toFixed(2)} `+
+          `(${d>=0?'+':''}${d.toFixed(2)}% vs 종가 · ${cfg.maWindow}일선 ${vsMa>=0?'+':''}${vsMa.toFixed(1)}%) · ${kst(e.ts)} KST</span>`+
+          `<br><span class="faint">신호는 정규장 종가 기준 · 장외가는 평가 참고용</span>`;})():'');
   }else $('sigStat').textContent='';
   // 경고
   let note='';
@@ -747,7 +787,8 @@ function render(){
 
   // 포지션
   if(inst.pos){
-    const px=inst.price||inst.pos.price;
+    const px=markPrice(inst)||inst.pos.price;
+    const usingExt=S.useExt!==false&&extFresh(inst);
     const pnlUsd=(px-inst.pos.price)*inst.pos.shares;
     const pnlPct=(px/inst.pos.price-1)*100;
     const val=posValueKRW(inst);
@@ -755,7 +796,7 @@ function render(){
     $('posValue').textContent=won(val);
     const f=(S.feeRate!=null?S.feeRate:0.25)/100;
     const bep=inst.pos.price*(1+f)/(1-f);
-    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)} · ${inst.pos.shares.toFixed(2)}주 · BEP $${bep.toFixed(2)}`;
+    $('posPx').textContent=`$${inst.pos.price.toFixed(2)} → $${px.toFixed(2)}${usingExt?(inst.ext.session==='PRE'?'(프리)':'(애프터)'):''} · ${inst.pos.shares.toFixed(2)}주 · BEP $${bep.toFixed(2)}`;
     $('posPnl').innerHTML=`<span style="color:${pnlPct>=0?'var(--buy)':'var(--danger)'}">`+
       `${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}% (${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(0)})</span>`;
   }else{
@@ -848,7 +889,8 @@ function render(){
   $('inFx').value=S.fx;
   const maFull=Engine.sma(closes,cfg.maWindow);
   $('pxNote').textContent=(maFull!=null?`${cfg.maWindow}일선 $${maFull.toFixed(2)} · 이력 ${closes.length}일`:
-    `이동평균에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`)+` · 환율 ₩${Number(S.fx).toFixed(2)}`;
+    `이동평균에 ${cfg.maWindow}일 필요 (현재 ${closes.length}일)`)+` · 환율 ₩${Number(S.fx).toFixed(2)}`+
+    (extFresh(inst)?` · ${SESS[inst.ext.session]} $${inst.ext.price.toFixed(2)} (${kst(inst.ext.ts)})`:'');
 
   $('dotBk').className='dot '+(linked()?((S.lastErrAt||0)>(S.lastBackupAt||0)?'warn':'ok'):'');
   $('bkNote').textContent=(S.autoBackup?'자동 백업 ON · ':'자동 백업 OFF · ')+
@@ -918,7 +960,7 @@ $('chartFull').addEventListener('click',e=>{
 $('btnFetch').onclick=fetchPrice;
 $('btnApply').onclick=()=>{
   const inst=A();const v=parseFloat($('inPx').value),fx=parseFloat($('inFx').value);
-  if(v>0){inst.price=v;
+  if(v>0){inst.price=v;inst.ext=null;
     const t=today();const h=inst.priceHistory;
     if(h.length&&h[h.length-1].date===t)h[h.length-1].close=v; else h.push({date:t,close:v});}
   if(fx>0)S.fx=fx;
@@ -929,7 +971,7 @@ $('btnIn').onclick=()=>{
   if(inst.pos)return toast('이미 보유 중입니다');
   const g=execGate(inst,'BUY');
   if(!g.ok&&!confirm(`${g.why}\n${g.detail||''}\n\n그래도 매수를 기록할까요?`))return;
-  const hint=inst.price!=null?inst.price.toFixed(2):'';
+  const _mp=markPrice(inst);const hint=_mp!=null?_mp.toFixed(2):'';
   const pxIn=prompt(`매수 체결가 (USD)\n\n${inst.symbol} · 실제 체결된 단가를 입력하세요.`,hint);
   if(pxIn===null)return;
   const px=parseFloat(String(pxIn).replace(/[^0-9.]/g,''));
@@ -963,7 +1005,7 @@ $('btnIn').onclick=()=>{
 $('btnOut').onclick=()=>{
   const inst=A();
   if(!inst.pos)return toast('보유 포지션이 없습니다');
-  const hint=(inst.price||inst.pos.price).toFixed(2);
+  const hint=(markPrice(inst)||inst.pos.price).toFixed(2);
   const pxIn=prompt(`매도 체결가 (USD)\n\n${inst.symbol} · 진입가 $${inst.pos.price.toFixed(2)}`,hint);
   if(pxIn===null)return;
   const px=parseFloat(String(pxIn).replace(/[^0-9.]/g,''));
@@ -1165,6 +1207,7 @@ function openSettings(){
   $('cfgCarry').value=tx.carryLoss||0;$('chkReserve').checked=!!tx.reserve;
   $('cfgFee').value=S.feeRate!=null?S.feeRate:0.25;
   $('cfgProxy').value=S.proxy||'';
+  $('chkExt').checked=S.useExt!==false;
   $('setView').classList.add('show');try{history.pushState({s:1},'');}catch(e){}
 }
 function collectSettings(){   // 설정 화면의 입력값을 모두 상태에 반영(저장 버튼 미클릭 대비)
@@ -1188,6 +1231,7 @@ function collectSettings(){   // 설정 화면의 입력값을 모두 상태에 
     S.tax.reserve=$('chkReserve').checked;
     if(parseFloat($('cfgFee').value)>=0)S.feeRate=parseFloat($('cfgFee').value);
     S.proxy=($('cfgProxy').value||'').trim();
+    S.useExt=$('chkExt').checked;
     save();
   }catch(e){}
 }
@@ -1233,7 +1277,8 @@ $('btnSaveTax').onclick=()=>{
 };
 $('btnSaveProxy').onclick=()=>{
   S.proxy=($('cfgProxy').value||'').trim();
-  save();render();toast(S.proxy?'프록시 저장됨':'프록시 해제(공개 프록시 사용)');backupSoon();
+  S.useExt=$('chkExt').checked;
+  save();render();toast('시세 설정 저장');backupSoon();
 };
 $('btnDelSym').onclick=()=>{
   if(S.symbols.length<=1)return toast('최소 1개 종목 필요');
@@ -1363,7 +1408,7 @@ function applyImportPlan(plan){
       S.symbols.push(inst);}
     if(p.qty>0)inst.pos={date:p.date,price:p.avg,shares:p.qty,krw:p.krw,fx:(inst.pos&&inst.pos.fx)||S.fx};
     else inst.pos=null;
-    if(p.price){inst.price=p.price;const h=inst.priceHistory,t=today();
+    if(p.price){inst.price=p.price;inst.ext=null;const h=inst.priceHistory,t=today();
       if(h.length&&h[h.length-1].date===t)h[h.length-1].close=p.price;}
   });
   plan.trades.forEach(t=>{const inst=_symOf(t.sym);if(!inst)return;
